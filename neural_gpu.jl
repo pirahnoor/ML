@@ -6,22 +6,26 @@ using Knet,ArgParse,Compat,GZip
 function generateData(upperbound,token)
 	x=rand(1:9999999, upperbound,1);
 	y=rand(1:9999999, upperbound,1);
+	z=zeros(upperbound,1)
 	if(isequal(token, "+"))
 		z=x+y;
 	elseif(isequal(token, "*"))
 		z=x.*y;
 	end
 	s= Any[];
+	zs= Any[];
 	for i= 1: upperbound 
 		a=bin(x[i])*token*bin(y[i]); 
-		push!(s,a)                       
+		b=bin(z[i])
+		push!(s,a) 
+		push!(zs,b)                      
 	end
-	return s,z
+	return s,zs
 end
-function minibatch(x, y, batchsize)
+function minibatch(x, z, batchsize)
 	data=Any[];
 	for i=1:batchsize:size(x,1)-batchsize+1
-		push!(data, x[i:i+batchsize-1], y[i:i+batchsize-1])
+		push!(data, x[i:i+batchsize-1], z[i:i+batchsize-1])
 	end
 	return data
 	
@@ -69,12 +73,13 @@ function loss(sn, ygold, m=24)
 	y=zeros(length(ygold), m)
 	ypred=zeros(size(sn,2),m)# it should not be zero by the way
 	c=1;k=1
-	while c <= endof(input)
-		ch=input[c];
+	while c <= endof(ygold)
+		ch=ygold[c];
+		println(ch)
 		index= vocab[ch];
 		v=E[index]
 		y[k,:]=v;
-		c=nextind(input,c)
+		c=nextind(ygold,c)
 		k=k+1
 	end
 	
@@ -108,8 +113,8 @@ E, vocab=embeddedMatrix();
 s0=init_state(E, x[1], vocab,3 )
 n=length(x[1]);
 w=initWeight(kh,kw, w, n)
-#sn=CGRU(s,w)#upto here it is correst
-#lossgradient = grad(loss);
+sn=CGRU(s0,w)#upto here it is correst
+lossgradient = grad(loss);
 #train(sn, ygold, gclip,w)
 
 
