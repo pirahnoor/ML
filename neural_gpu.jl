@@ -69,11 +69,10 @@ function initWeight(kw,kh,x,y, vocab, atype=Array{Float32}, winit=0.1, m=24)
 	return w;
 end
 function CGRU(s,W)
-	s=reshape(s,size(s)..., 1)
 	s=convert(KnetArray{Float32}, s);
-	u=sigm(conv4(W[3], s) .+ W[4]);
-	r=sigm(conv4(W[5], s) .+ W[6]);
-	sn=u.*s+(1-u) .* tanh(conv4(W[1], (r.*s))+W[2])
+	u=sigm(conv4(W[3], s, padding=1) .+ W[4]);
+	r=sigm(conv4(W[5], s, padding=1) .+ W[6]);
+	sn=u.*s+(1-u) .* tanh(conv4(W[1], (r.*s), padding=1).+W[2])
 	return sn
 end
 function predict(s,w)
@@ -81,7 +80,7 @@ function predict(s,w)
 	y=Any[];
 	for k=1:size(sn,2)
 		lk=sn[1,k,:]'
-		lk=convert(KnetArray{Float32}, lk)
+		#lk=convert(KnetArray{Float32}, lk)
 		lk=lk*w[7] .+ w[8];
 		push!(y,lk);
 	end
@@ -134,6 +133,7 @@ E, vocab=embeddedMatrix();
 s0=init_state(E, x[1], vocab,3 )
 n=length(x[1]);
 W=initWeight(kh,kw, w, n, vocab)
+s0=reshape(s0,size(s0)..., 1)
 sn=CGRU(s0,W)#upto here it is correct
 lossgradient = grad(loss);
 #train(sn, ygold, gclip,w)
