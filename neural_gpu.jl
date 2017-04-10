@@ -55,6 +55,22 @@ function init_state(E, input, vocab, w,m=24)
 	return s
 	
 end
+function generate_ygold(ygold, vocab)
+y=Any[];#4=vocab size
+c=1;k=1
+	while c <= endof(ygold)#generating ygolds
+		one_hot_vector= KnetArray{Float32}(zeros(length(vocab), 1))
+		ch=ygold[c];
+		#println(ch)
+		index= vocab[ch];
+		one_hot_vector[index, 1]=1;
+		#one_hot_vector=convert(KnetArray{Float32}, one_hot_vector)
+		push!(y,one_hot_vector);
+		c=nextind(ygold,c)
+		k=k+1
+	end
+return y
+end
 function initWeight(kw,kh,x,y, vocab, atype=Array{Float32}, winit=0.1, m=24)
 	w = Array(Any,8);
 	#O=ones(m, length(vocab));
@@ -65,8 +81,12 @@ function initWeight(kw,kh,x,y, vocab, atype=Array{Float32}, winit=0.1, m=24)
 	w[5] = KnetArray{Float32}(winit*randn(kw,kh,m,m));#U''
 	w[6] = KnetArray{Float32}(zeros(1,1,m,1));#B''
 	w[7] = KnetArray{Float32}(randn(m, length(vocab))*winit);#W of softmax
-	w[8] = Array{Float32}(zeros(1,length(vocab)));#b of softmax
+	w[8] = KnetArray{Float32}(zeros(1,length(vocab)));#b of softmax
 	return w;
+end
+function initparams(W)
+    prms = map(x->Knet.Adam(lr=0.1, beta1=0.95, beta2=0.995), W)
+    return prms
 end
 function CGRU(s,W)
 	s=convert(KnetArray{Float32}, s);
@@ -79,49 +99,71 @@ function predict(s,w)
 	sn=CGRU(s,w)
 	y=Any[];
 	for k=1:size(sn,2)
-		lk=sn[1,k,:]'
-		#lk=convert(KnetArray{Float32}, lk)
+		#lk=KnetArray{Float32}(zeros(size(sn,3),1))
+		lk=Any[]
+		#generate lk form 4D sn array
+		snew=reshape(sn, size(sn,1)*size(sn,2)*size(sn,3),1,1,1)
+		for l=0:23
+			lk= vcat(lk,snew[l*size(sn,1)*size(sn,2)+1])
+		end
+		lk=convert(KnetArray{Float32},lk)
+		lk=reshape(lk,1,m)
 		lk=lk*w[7] .+ w[8];
 		push!(y,lk);
 	end
 	return y
 end
 function loss(w, ygold, vocab, s, m=24)
-	y=Any[];#4=vocab size
 	total=0;count=0;
-	c=1;k=1
-	while c <= endof(ygold)#generating ygolds
-		one_hot_vector= zeros(length(vocab), 1)
-		ch=ygold[c];
-		#println(ch)
-		index= vocab[ch];
-		one_hot_vector[index, 1]=1;
-		one_hot_vector=convert(KnetArray{Float32}, one_hot_vector)
-		push!(y,one_hot_vector);
-		c=nextind(ygold,c)
-		k=k+1
-	end
 	ypred=predict(s,w)
-	for i=1: size(y,1)
+	for i=1: size(ygold,1)
 		ynorm=logp(ypred[i])
-		yg=y[i]
+		yg=ygold[i]
 		total += sum(yg .* ynorm) 
 	end
-	return total/size(y,1)
+	return total/size(ygold,1)
 	
 end
 
 function train(s, ygold, gclip, vocab, W)
-	gloss=lossgradient(s, ygold[1], vocab, W)
-	gloss2= gloss.*gloss
-	gnorm=sqrt(sum(gloss2, 1))
-	if gnorm >gclip
-		gloss=(gloss*gclip)/gnorm
+	ygoldn=generate_ygold(ygold[1], vocab)
+	gloss=lossgradient(W, ygoldn, vocab, s)
+	gnorm=0;
+	for k= 1 : size(gloss,1)
+		gnorm += sumabs2(gloss[k])
 	end
-	opts = map(x->Knet.Adam(), w);
-	update!(sn,gloss, opts)
-
+	gnorm=sqrt(gnorm)
+	if gnorm >gclip
+		for k = 1: size(W,1)
+			gloss[k] = (gloss[k] * gclip)/gnorm
+		end
+	end
+	prms = initparams(W)
+	for k = 1: size(W,1)
+		update!(W[k], gloss[k], prms[k])
+	end
+	return W
+	
 end
+function accuracy(x,y,W)#send one x and one y from data
+	E, vocab=embeddedMatrix();
+	ygold=generate_ygold(y, vocab)
+	ncorrect = ninstance = nloss = 0
+	s0=init_state(E, x, vocab,3 )
+	n=length(x[1]);
+	s0=reshape(s0,size(s0)..., 1)
+	ypred=predict(s0,W)
+	for i=1: size(ygold,1)
+		ynorm=logp(ypred[i])
+		yg=ygold[i]
+		nloss += sum(yg .* ynorm)
+		ncorrect += sum(yg .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],1))), 4,1))
+		ninstance += size(ygold,1)
+	end
+	
+    return (ncorrect/ninstance, nloss/ninstance)
+end
+
 w=3;
 m=24;
 kh=3;
@@ -137,7 +179,11 @@ s0=reshape(s0,size(s0)..., 1)
 sn=CGRU(s0,W)#upto here it is correct
 lossgradient = grad(loss);
 #train(sn, ygold, gclip,w)
-l=lossgradient(W, ygold[1], vocab, s0 )
+ygoldn=generate_ygold(ygold[1], vocab)
+l=lossgradient(W, ygoldn, vocab, s0 )
+Wnew=train(s0, ygold, gclip, vocab, W)
+accuracy(x[1], ygold[1],Wnew)
+
 #size(y)
 
 
