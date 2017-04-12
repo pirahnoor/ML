@@ -171,15 +171,15 @@ end
 function accuracy(x,y,W)#send one x and one y from data
 	E, vocab=embeddedMatrix();
 	println("Accuracy called")
+	ncorrect =  0
 	for i=1:size(y,1)
 		ygold=generate_ygold(y[i], vocab)
-		ncorrect = ninstance = nloss = 0
 		s0=init_state(E, x[i], vocab,3 )
 		n=length(x[i]);
 		s0=reshape(s0,size(s0)..., 1)
 		ypred=predict(s0,W)
 		ncorrect += matchSequence(ypred,ygold)
-		println(ncorrect)
+		println("tic toc ", rand(), "  Correct ->", ncorrect)
 	end
 
 	
@@ -191,8 +191,8 @@ m=24;
 kh=3;
 kw=3;
 gclip=1
-x, ygold=generateData(10000, "*");
-data=minibatch(x, ygold, 1000)
+x, ygold=generateData(100, "+");
+#data=minibatch(x, ygold, 1000)
 E, vocab=embeddedMatrix();
 s0=init_state(E, x[1], vocab,3 )
 n=length(x[1]);
@@ -204,8 +204,8 @@ lossgradient = grad(loss);
 ygoldn=generate_ygold(ygold[1], vocab)
 l=lossgradient(W, ygoldn, vocab, s0 )
 Wnew=train(x, ygold, gclip, W, E, vocab)
-xtst, ygoldtst=generateData(100, "*");
-accuracy(x, ygold,Wnew)
+xtst, ygoldtst=generateData(10, "+");
+accuracy(xtst, ygoldtst,Wnew)
 
 #size(y)
 
