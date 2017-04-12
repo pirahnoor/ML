@@ -43,10 +43,13 @@ end
 function init_state(E, input, vocab, w,m=24)
 	c=1;k=1
 	n=length(input);
+	println(input)
 	s=zeros(w,n,m)
 	while c <= endof(input)
 		ch=input[c];
+		println("ch -> ",ch)
 		index= vocab[ch];
+		println("index -> ",index)
 		v=E[index]
 		s[1,k,:]=v;
 		c=nextind(input,c)
@@ -125,43 +128,62 @@ function loss(w, ygold, vocab, s, m=24)
 	
 end
 
-function train(s, ygold, gclip, vocab, W)
-	ygoldn=generate_ygold(ygold[1], vocab)
-	gloss=lossgradient(W, ygoldn, vocab, s)
-	gnorm=0;
-	for k= 1 : size(gloss,1)
-		gnorm += sumabs2(gloss[k])
-	end
-	gnorm=sqrt(gnorm)
-	if gnorm >gclip
-		for k = 1: size(W,1)
-			gloss[k] = (gloss[k] * gclip)/gnorm
+function train(x, ygold, gclip, W, E, vocab)
+	println("Training ...")
+	for l= 1:size(ygold,1)
+		println(rand())
+		ygoldn=generate_ygold(ygold[l], vocab)
+		s=init_state(E, x[l], vocab,3 )
+		s=reshape(s, size(s)..., 1)
+		gloss=lossgradient(W, ygoldn, vocab, s)
+		gnorm=0;
+		for k= 1 : size(gloss,1)
+			gnorm += sumabs2(gloss[k])
 		end
-	end
-	prms = initparams(W)
-	for k = 1: size(W,1)
-		update!(W[k], gloss[k], prms[k])
+		gnorm=sqrt(gnorm)
+		if gnorm >gclip
+			for k = 1: size(W,1)
+				gloss[k] = (gloss[k] * gclip)/gnorm
+			end
+		end
+		prms = initparams(W)
+		for k = 1: size(W,1)
+			update!(W[k], gloss[k], prms[k])
+		end
 	end
 	return W
 	
 end
-function accuracy(x,y,W)#send one x and one y from data
-	E, vocab=embeddedMatrix();
-	ygold=generate_ygold(y, vocab)
-	ncorrect = ninstance = nloss = 0
-	s0=init_state(E, x, vocab,3 )
-	n=length(x[1]);
-	s0=reshape(s0,size(s0)..., 1)
-	ypred=predict(s0,W)
+#ypred and ygold are arrays of one hot vectors of size Vocab X sequenceLength
+#This method matches if the corresponding index of highest number in ypred[k] is equal to index of 1 in ygold[k]
+function matchSequence(ypred, ygold)
+	ncorrect=0;
 	for i=1: size(ygold,1)
-		ynorm=logp(ypred[i])
-		yg=ygold[i]
-		nloss += sum(yg .* ynorm)
-		ncorrect += sum(yg .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],1))), 4,1))
-		ninstance += size(ygold,1)
+	ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],1))), 4,1))
+	end
+	if ncorrect == size(ygold,1)
+		return 1
+	else
+		return 0
 	end
 	
-    return (ncorrect/ninstance, nloss/ninstance)
+end
+function accuracy(x,y,W)#send one x and one y from data
+	E, vocab=embeddedMatrix();
+	println("Accuracy called")
+	for i=1:size(y,1)
+		ygold=generate_ygold(y[i], vocab)
+		ncorrect = ninstance = nloss = 0
+		s0=init_state(E, x[i], vocab,3 )
+		n=length(x[i]);
+		s0=reshape(s0,size(s0)..., 1)
+		ypred=predict(s0,W)
+		ncorrect += matchSequence(ypred,ygold)
+		println(ncorrect)
+	end
+
+	
+    return ncorrect/size(y,1)
 end
 
 w=3;
@@ -181,8 +203,9 @@ lossgradient = grad(loss);
 #train(sn, ygold, gclip,w)
 ygoldn=generate_ygold(ygold[1], vocab)
 l=lossgradient(W, ygoldn, vocab, s0 )
-Wnew=train(s0, ygold, gclip, vocab, W)
-accuracy(x[1], ygold[1],Wnew)
+Wnew=train(x, ygold, gclip, W, E, vocab)
+xtst, ygoldtst=generateData(100, "*");
+accuracy(x, ygold,Wnew)
 
 #size(y)
 
