@@ -11,12 +11,54 @@ function generateData(upperbound,token)
 		z=x+y;
 	elseif(isequal(token, "*"))
 		z=x.*y;
+	elseif(isequal(token, "copy"))
+		z=x;
+	elseif(isequal(token, "reverse"))
+		z=x;
+	elseif(isequal(token, "duplicate"))
+		z=x;
+	elseif(isequal(token, "cbys"))
+		z=x;
 	end
 	s= Any[];
 	zs= Any[];
 	for i= 1: upperbound 
-		a=bin(x[i])*token*bin(y[i]); 
-		b=bin(z[i])
+		if(isequal(token, "+") || isequal(token, "*")) 
+			a=bin(x[i])*token*bin(y[i]);
+		else
+			a=bin(x[i]);
+		end
+		if(isequal(token, "reverse"))
+			b=reverse(bin(z[i]))
+		elseif(isequal(token, "duplicate"))
+			b=bin(z[i])*bin(z[i])
+		elseif(isequal(token, "cbys"))
+			count1=0; count0=0; c=1
+			input=bin(z[i])
+			while c <= endof(input)
+				ch=input[c];
+				#println(ch)
+				if(isequal(ch, '1')) 
+					count1=count1+1
+				elseif(isequal(ch, '0'))
+					count0= count0+1
+				end
+				c=nextind(input,c)
+			end
+			#println("0s= ",count0, " 1s=  ",count1)
+			p=""
+			q=""
+			for k= 1:count0
+			p=p*"0"
+			end
+			for l= 1:count1
+			q=q*"1"
+			end
+			b=p*q
+			#println(b, "---",p, "---",q)
+		else
+			b=bin(z[i])
+		end
 		push!(s,a) 
 		push!(zs,b)                      
 	end
@@ -43,13 +85,13 @@ end
 function init_state(E, input, vocab, w,m=24)
 	c=1;k=1
 	n=length(input);
-	println(input)
+	#println(input)
 	s=zeros(w,n,m)
 	while c <= endof(input)
 		ch=input[c];
-		println("ch -> ",ch)
+		#println("ch -> ",ch)
 		index= vocab[ch];
-		println("index -> ",index)
+		#println("index -> ",index)
 		v=E[index]
 		s[1,k,:]=v;
 		c=nextind(input,c)
@@ -92,14 +134,16 @@ function initparams(W)
     return prms
 end
 function CGRU(s,W)
-	s=convert(KnetArray{Float32}, s);
 	u=sigm(conv4(W[3], s, padding=1) .+ W[4]);
 	r=sigm(conv4(W[5], s, padding=1) .+ W[6]);
 	sn=u.*s+(1-u) .* tanh(conv4(W[1], (r.*s), padding=1).+W[2])
 	return sn
 end
-function predict(s,w)
-	sn=CGRU(s,w)
+function predict(s,w, m=24)
+	s=convert(KnetArray{Float32}, s);
+	s1=CGRU(s,w)
+	sn=CGRU(s1,w)
+	
 	y=Any[];
 	for k=1:size(sn,2)
 		#lk=KnetArray{Float32}(zeros(size(sn,3),1))
@@ -127,11 +171,12 @@ function loss(w, ygold, vocab, s, m=24)
 	return total/size(ygold,1)
 	
 end
+lossgradient = grad(loss);
 
 function train(x, ygold, gclip, W, E, vocab)
 	println("Training ...")
 	for l= 1:size(ygold,1)
-		println(rand())
+		#println(rand())
 		ygoldn=generate_ygold(ygold[l], vocab)
 		s=init_state(E, x[l], vocab,3 )
 		s=reshape(s, size(s)..., 1)
@@ -161,11 +206,13 @@ function matchSequence(ypred, ygold)
 	for i=1: size(ygold,1)
 	ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],1))), 4,1))
 	end
+	#println("___________________________",size(ygold,1), "   ***    ", ncorrect);
 	if ncorrect == size(ygold,1)
 		return 1
 	else
 		return 0
 	end
+	
 	
 end
 function accuracy(x,y,W)#send one x and one y from data
@@ -179,36 +226,79 @@ function accuracy(x,y,W)#send one x and one y from data
 		s0=reshape(s0,size(s0)..., 1)
 		ypred=predict(s0,W)
 		ncorrect += matchSequence(ypred,ygold)
-		println("tic toc ", rand(), "  Correct ->", ncorrect)
+		#println("tic toc ", rand(), "  Correct ->", ncorrect)
 	end
 
 	
-    return ncorrect/size(y,1)
+    return ncorrect/size(y,1)*100
 end
-
+function main()
 w=3;
 m=24;
 kh=3;
 kw=3;
 gclip=1
-x, ygold=generateData(100, "+");
-#data=minibatch(x, ygold, 1000)
+trainInstances= 100
+testInstances= 10
+println("#######  NEURAL_GPU coded by Piraj Noor Soomro   #######\n\n ___________________________________________________________________")
+println("------------------ADD-----------------------")
+println("Training Instances: ", trainInstances)
+println("Testing Instances ", testInstances)
+x, ygold=generateData(trainInstances, "+");
 E, vocab=embeddedMatrix();
-s0=init_state(E, x[1], vocab,3 )
 n=length(x[1]);
 W=initWeight(kh,kw, w, n, vocab)
-s0=reshape(s0,size(s0)..., 1)
-sn=CGRU(s0,W)#upto here it is correct
-lossgradient = grad(loss);
-#train(sn, ygold, gclip,w)
-ygoldn=generate_ygold(ygold[1], vocab)
-l=lossgradient(W, ygoldn, vocab, s0 )
 Wnew=train(x, ygold, gclip, W, E, vocab)
-xtst, ygoldtst=generateData(10, "+");
-accuracy(xtst, ygoldtst,Wnew)
-
-#size(y)
-
+println("Testing")
+xtst, ygoldtst=generateData(testInstances, "+");
+a=accuracy(xtst, ygoldtst,Wnew)
+println("Accuracy Binary ADD = ", a, "%.")
+println("------------------MULTIPLY-----------------------")
+println("Training Instances: ", trainInstances)
+println("Testing Instances ", testInstances)
+x, ygold=generateData(trainInstances, "*");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+Wnew=train(x, ygold, gclip, W, E, vocab)
+xtst, ygoldtst=generateData(testInstances, "*");
+a=accuracy(xtst, ygoldtst,Wnew)
+println("Accuracy Binary MUL = ", a, "%.")
+println("------------------COPY-----------------------")
+println("Training Instances: ", trainInstances)
+println("Testing Instances ", testInstances)
+x, ygold=generateData(trainInstances, "copy");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+Wnew=train(x, ygold, gclip, W, E, vocab)
+xtst, ygoldtst=generateData(testInstances, "copy");
+a=accuracy(xtst, ygoldtst,Wnew)
+println("Accuracy Binary Copy = ", a, "%.")
+println("------------------REVERSE-----------------------")
+println("Training Instances: ", trainInstances)
+println("Testing Instances ", testInstances)
+x, ygold=generateData(trainInstances, "reverse");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+Wnew=train(x, ygold, gclip, W, E, vocab)
+xtst, ygoldtst=generateData(testInstances, "reverse");
+a=accuracy(xtst, ygoldtst,Wnew)
+println("Accuracy Binary REVERSE = ", a, "%.")
+println("------------------COUNTING BY SORTING BITS-----------------------")
+println("Training Instances: ", trainInstances)
+println("Testing Instances ", testInstances)
+x, ygold=generateData(trainInstances, "cbys");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+Wnew=train(x, ygold, gclip, W, E, vocab)
+xtst, ygoldtst=generateData(testInstances, "cbys");
+a=accuracy(xtst, ygoldtst,Wnew)
+println("Accuracy Binary CbyS = ", a, "%.")
+end
+main()
 
 
 
