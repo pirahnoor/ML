@@ -32,6 +32,10 @@ function generateData(upperbound,token)
 			b=reverse(bin(z[i]))
 		elseif(isequal(token, "duplicate"))
 			b=bin(z[i])*bin(z[i])
+			xsz=length(bin(x[i]));
+			for h=1:xsz
+			a=a*"0"
+			end
 		elseif(isequal(token, "cbys"))
 			count1=0; count0=0; c=1
 			input=bin(z[i])
@@ -240,7 +244,7 @@ kw=3;
 gclip=1
 trainInstances= 100
 testInstances= 10
-println("#######  NEURAL_GPU coded by Piraj Noor Soomro   #######\n\n ___________________________________________________________________")
+println("#######  NEURAL_GPU coded by Pirah Noor Soomro   #######\n\n ___________________________________________________________________")
 println("------------------ADD-----------------------")
 println("Training Instances: ", trainInstances)
 println("Testing Instances ", testInstances)
@@ -297,6 +301,17 @@ Wnew=train(x, ygold, gclip, W, E, vocab)
 xtst, ygoldtst=generateData(testInstances, "cbys");
 a=accuracy(xtst, ygoldtst,Wnew)
 println("Accuracy Binary CbyS = ", a, "%.")
+println("------------------DUPLICATE-----------------------")
+println("Training Instances: ", trainInstances)
+println("Testing Instances ", testInstances)
+x, ygold=generateData(trainInstances, "duplicate");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+Wnew=train(x, ygold, gclip, W, E, vocab)
+xtst, ygoldtst=generateData(testInstances, "duplicate");
+a=accuracy(xtst, ygoldtst,Wnew)
+println("Accuracy Binary DUPLICATE = ", a, "%.")
 end
 main()
 
