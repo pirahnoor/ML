@@ -4,8 +4,8 @@ end
 using Knet,ArgParse,Compat,GZip
 
 function generateData(upperbound,token)
-	x=rand(1:9999999, upperbound,1);
-	y=rand(1:9999999, upperbound,1);
+	x=rand(1:4, upperbound,1);
+	y=rand(1:4, upperbound,1);
 	z=zeros(upperbound,1)
 	if(isequal(token, "+"))
 		z=x+y;
@@ -207,8 +207,13 @@ end
 #This method matches if the corresponding index of highest number in ypred[k] is equal to index of 1 in ygold[k]
 function matchSequence(ypred, ygold)
 	ncorrect=0;
+	#println("ypred size= ", size(ypred[1],2));
+	#println("size of ygold", size(ygold[1],1), " ", size(ygold[1],2));
 	for i=1: size(ygold,1)
-	ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],1))), 4,1))
+		#ypred 1X4 ygold 4X1
+		#ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],2))), 4,1))
+		ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],2))), 4,1))
+		#println(reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],2))), 4,1))
 	end
 	#println("___________________________",size(ygold,1), "   ***    ", ncorrect);
 	if ncorrect == size(ygold,1)
@@ -219,8 +224,8 @@ function matchSequence(ypred, ygold)
 	
 	
 end
-function accuracy(x,y,W)#send one x and one y from data
-	E, vocab=embeddedMatrix();
+function accuracy(x,y,W, E, vocab)#send one x and one y from data
+	#E, vocab=embeddedMatrix();
 	println("Accuracy called")
 	ncorrect =  0
 	for i=1:size(y,1)
@@ -242,8 +247,8 @@ m=24;
 kh=3;
 kw=3;
 gclip=1
-trainInstances= 100
-testInstances= 10
+trainInstances= 10000
+testInstances= 10000
 println("#######  NEURAL_GPU coded by Pirah Noor Soomro   #######\n\n ___________________________________________________________________")
 println("------------------ADD-----------------------")
 println("Training Instances: ", trainInstances)
@@ -255,63 +260,9 @@ W=initWeight(kh,kw, w, n, vocab)
 Wnew=train(x, ygold, gclip, W, E, vocab)
 println("Testing")
 xtst, ygoldtst=generateData(testInstances, "+");
-a=accuracy(xtst, ygoldtst,Wnew)
+a=accuracy(xtst, ygoldtst,Wnew, E, vocab)
 println("Accuracy Binary ADD = ", a, "%.")
-println("------------------MULTIPLY-----------------------")
-println("Training Instances: ", trainInstances)
-println("Testing Instances ", testInstances)
-x, ygold=generateData(trainInstances, "*");
-E, vocab=embeddedMatrix();
-n=length(x[1]);
-W=initWeight(kh,kw, w, n, vocab)
-Wnew=train(x, ygold, gclip, W, E, vocab)
-xtst, ygoldtst=generateData(testInstances, "*");
-a=accuracy(xtst, ygoldtst,Wnew)
-println("Accuracy Binary MUL = ", a, "%.")
-println("------------------COPY-----------------------")
-println("Training Instances: ", trainInstances)
-println("Testing Instances ", testInstances)
-x, ygold=generateData(trainInstances, "copy");
-E, vocab=embeddedMatrix();
-n=length(x[1]);
-W=initWeight(kh,kw, w, n, vocab)
-Wnew=train(x, ygold, gclip, W, E, vocab)
-xtst, ygoldtst=generateData(testInstances, "copy");
-a=accuracy(xtst, ygoldtst,Wnew)
-println("Accuracy Binary Copy = ", a, "%.")
-println("------------------REVERSE-----------------------")
-println("Training Instances: ", trainInstances)
-println("Testing Instances ", testInstances)
-x, ygold=generateData(trainInstances, "reverse");
-E, vocab=embeddedMatrix();
-n=length(x[1]);
-W=initWeight(kh,kw, w, n, vocab)
-Wnew=train(x, ygold, gclip, W, E, vocab)
-xtst, ygoldtst=generateData(testInstances, "reverse");
-a=accuracy(xtst, ygoldtst,Wnew)
-println("Accuracy Binary REVERSE = ", a, "%.")
-println("------------------COUNTING BY SORTING BITS-----------------------")
-println("Training Instances: ", trainInstances)
-println("Testing Instances ", testInstances)
-x, ygold=generateData(trainInstances, "cbys");
-E, vocab=embeddedMatrix();
-n=length(x[1]);
-W=initWeight(kh,kw, w, n, vocab)
-Wnew=train(x, ygold, gclip, W, E, vocab)
-xtst, ygoldtst=generateData(testInstances, "cbys");
-a=accuracy(xtst, ygoldtst,Wnew)
-println("Accuracy Binary CbyS = ", a, "%.")
-println("------------------DUPLICATE-----------------------")
-println("Training Instances: ", trainInstances)
-println("Testing Instances ", testInstances)
-x, ygold=generateData(trainInstances, "duplicate");
-E, vocab=embeddedMatrix();
-n=length(x[1]);
-W=initWeight(kh,kw, w, n, vocab)
-Wnew=train(x, ygold, gclip, W, E, vocab)
-xtst, ygoldtst=generateData(testInstances, "duplicate");
-a=accuracy(xtst, ygoldtst,Wnew)
-println("Accuracy Binary DUPLICATE = ", a, "%.")
+
 end
 main()
 
