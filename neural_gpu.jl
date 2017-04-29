@@ -5,7 +5,8 @@ using Knet,ArgParse,Compat,GZip
 
 function generateData(upperbound,token)
 	x=rand(0:4, upperbound,1); #32 to 63   are binary numbers with length 6
-	y=rand(0:4, upperbound,1);
+	y=x;
+	#y=rand(8:15, upperbound,1);
 	z=zeros(upperbound,1)
 	if(isequal(token, "+"))
 		z=x+y;
@@ -135,14 +136,14 @@ function initWeight(kw,kh,x,y, vocab, atype=Array{Float32}, winit=0.001, m=24)
 	return w;
 end
 function initparams(W)
-    prms = map(x->Knet.Adam(lr=.1, beta1=0.95, beta2=0.995, eps=1e-4), W)
+    prms = map(x->Knet.Adam(lr=0.1, beta1=0.95, beta2=0.995, eps=1e-4), W)
     return prms
 end
 function CGRU(s,W)
 	u=sigm(conv4(W[3], s, padding=1) .+ W[4]);
-	u=max(0,min(1,1.2*u-0.1))
+	u=max(0,min(1,1.2*u-0.1)) #thresholding
 	r=sigm(conv4(W[5], s, padding=1) .+ W[6]);
-	r=max(0,min(1,1.2*r-0.1))
+	r=max(0,min(1,1.2*r-0.1)) #thresholding
 	sn=u.*s+(1-u) .* tanh(conv4(W[1], (r.*s), padding=1).+W[2])
 	return sn
 end
@@ -171,12 +172,8 @@ function loss(w, ygold, vocab, s, m=24)
 	total=0;count=0;
 	ypred=predict(s,w)
 	for i=1: size(ygold,1)
-		ynorm=logp(ypred[i])
-		#println("U= ", u[1,1], " ", u[1,2], " ", u[1,3])
-		#println(ypred[i], "---", size(ypred[i]))
-		#println("ynorm", ynorm)
+		ynorm=logp(AutoGrad.getval(ypred)[i])
 		yg=reshape(ygold[i], size(ynorm,1), size(ynorm,2))
-		#println(size(yg), "5----" , size(ynorm))
 		total +=(- sum(yg .* ynorm)) 
 	end
 	#println("LOSS Toatl", total)
@@ -203,6 +200,7 @@ function train(x, ygold, gclip, W, E, vocab, prms)
 		if gnorm >gclip
 			for k = 1: size(W,1)
 				gloss[k] = (gloss[k] * gclip)/gnorm
+				#gloss[k] = gloss[k]+rand_normal(l) #noise gradient
 			end
 		end
 		#@show gradcheck(loss, W, ygoldn, vocab, s )
@@ -213,17 +211,29 @@ function train(x, ygold, gclip, W, E, vocab, prms)
 	return 
 	
 end
+## return a random sample from a normal (Gaussian) distribution
+function rand_normal(timestep, mean=0)
+	eeta=0.01
+	gamma=0.55
+	variance = eeta/((1+timestep)^gamma)	
+	stdev= sqrt(variance)
+    if stdev <= 0.0
+        error("standard deviation must be positive")
+    end
+    u1 = rand()
+    u2 = rand()
+    r = sqrt( -2.0*log(u1) )
+    theta = 2.0*pi*u2
+    return mean + stdev*r*sin(theta)
+end
 #ypred and ygold are arrays of one hot vectors of size Vocab X sequenceLength
 #This method matches if the corresponding index of highest number in ypred[k] is equal to index of 1 in ygold[k]
 function matchSequence(ypred, ygold)
 	ncorrect=0;
-	#println("ypred size= ", size(ypred[1],2));
-	#println("size of ygold", size(ygold[1],1), " ", size(ygold[1],2));
 	for i=1: size(ygold,1)
 		#ypred 1X4 ygold 4X1
-		#ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],2))), 4,1))
-		ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],2))), 4,1))
-		#println(reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],2))), 4,1))
+		ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],2))), size(ygold[i],1),size(ygold[i],2)))
+		
 	end
 	#println("___________________________",size(ygold,1), "   ***    ", ncorrect);
 	if ncorrect == size(ygold,1)
@@ -235,7 +245,6 @@ function matchSequence(ypred, ygold)
 	
 end
 function accuracy(x,y,W, E, vocab)#send one x and one y from data
-	#E, vocab=embeddedMatrix();
 	println("Accuracy called")
 	ncorrect =  0
 	for i=1:size(y,1)
@@ -256,14 +265,14 @@ w=4;
 m=24;
 kh=3;
 kw=3;
-gclip=1
-trainInstances= 10000
+gclip=0.01
+trainInstances= 1000
 testInstances= 100
 println("#######  NEURAL_GPU coded by Pirah Noor Soomro   #######\n\n ___________________________________________________________________")
-println("------------------copy-----------------------")
+println("------------------MULTIPLY-----------------------")
 println("Training Instances: ", trainInstances)
 println("Testing Instances ", testInstances)
-x, ygold=generateData(trainInstances, "copy");
+x, ygold=generateData(trainInstances, "*");
 E, vocab=embeddedMatrix();
 n=length(x[1]);
 W=initWeight(kh,kw, w, n, vocab)
@@ -271,10 +280,15 @@ prms = initparams(W)
 println(sum(W[1]))
 train(x, ygold, gclip, W, E, vocab, prms)
 println(sum(W[1]))
+x, ygold=generateData(trainInstances, "*");
+train(x, ygold, gclip, W, E, vocab, prms)
+println(sum(W[1]))
 println("Testing")
-xtst, ygoldtst=generateData(testInstances, "copy");
+xtst, ygoldtst=generateData(testInstances, "*");
+a=accuracy(x, ygold,W, E, vocab)
+println("Accuracy Binary MULTIPLY = ", a, "%.")
 a=accuracy(xtst, ygoldtst,W, E, vocab)
-println("Accuracy Binary COPY = ", a, "%.")
+println("Accuracy Binary MULTIPLY = ", a, "%.")
 
 #end
 #main()
