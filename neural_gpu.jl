@@ -3,10 +3,10 @@ for p in ("Knet","ArgParse","Compat","GZip")
 end
 using Knet,ArgParse,Compat,GZip
 
-function generateData(upperbound,token)
-	x=rand(0:4, upperbound,1); #32 to 63   are binary numbers with length 6
-	y=x;
-	#y=rand(8:15, upperbound,1);
+function generateData(l,u, upperbound,token)
+	x=rand(l:u, upperbound,1); #32 to 63   are binary numbers with length 6, 11 bits (1048, 1060) 20 bits(1000000,1000009)
+	#y=x;
+	y=rand(l:u, upperbound,1);
 	z=zeros(upperbound,1)
 	if(isequal(token, "+"))
 		z=x+y;
@@ -131,12 +131,12 @@ function initWeight(kw,kh,x,y, vocab, atype=Array{Float32}, winit=0.001, m=24)
 	w[4] = KnetArray{Float32}(zeros(1,1,m,1));#B'
 	w[5] = KnetArray{Float32}(xavier(kw,kh,m,m));#U''
 	w[6] = KnetArray{Float32}(zeros(1,1,m,1));#B''
-	w[7] = KnetArray{Float32}(xavier(m, length(vocab))*winit);#W of softmax
+	w[7] = KnetArray{Float32}(xavier(m, length(vocab)));#W of softmax
 	w[8] = KnetArray{Float32}(zeros(1,length(vocab)));#b of softmax
 	return w;
 end
 function initparams(W)
-    prms = map(x->Knet.Adam(lr=0.1, beta1=0.95, beta2=0.995, eps=1e-4), W)
+    prms = map(x->Knet.Adam(lr=0.7 , beta1=0.95, beta2=0.995, eps=1e-4), W)
     return prms
 end
 function CGRU(s,W)
@@ -163,7 +163,7 @@ function predict(s,w, m=24)
 		end
 		lk=convert(KnetArray{Float32},lk)
 		lk=reshape(lk,1,m)
-		lk=lk*w[7] .+ w[8];
+		lk=relu(lk*w[7] .+ w[8]);
 		push!(y,lk);
 	end
 	return y
@@ -172,7 +172,7 @@ function loss(w, ygold, vocab, s, m=24)
 	total=0;count=0;
 	ypred=predict(s,w)
 	for i=1: size(ygold,1)
-		ynorm=logp(AutoGrad.getval(ypred)[i])
+		ynorm=logp(ypred[i])
 		yg=reshape(ygold[i], size(ynorm,1), size(ynorm,2))
 		total +=(- sum(yg .* ynorm)) 
 	end
@@ -192,6 +192,14 @@ function train(x, ygold, gclip, W, E, vocab, prms)
 		s=reshape(s, size(s)..., 1)
 		gloss=lossgradient(W, ygoldn, vocab, s)
 		gnorm=0;
+		#print gradients to check
+		#println(size(gloss[1]))
+		#for k= 1 : size(gloss,1)
+		#	println(gloss[k][1])
+		#	println(gloss[k][2])
+		#	println(gloss[k][3])
+		#	println(gloss[k][4])
+		#end
 		for k= 1 : size(gloss,1)
 			gnorm += sumabs2(gloss[k])
 		end
@@ -203,7 +211,7 @@ function train(x, ygold, gclip, W, E, vocab, prms)
 				#gloss[k] = gloss[k]+rand_normal(l) #noise gradient
 			end
 		end
-		#@show gradcheck(loss, W, ygoldn, vocab, s )
+		#@show gradcheck(loss, W, ygoldn, vocab, s;verbose=true,atol=0.01 )
 		for k = 1: size(W,1)
 			update!(W[k], gloss[k], prms[k])
 		end
@@ -232,7 +240,7 @@ function matchSequence(ypred, ygold)
 	ncorrect=0;
 	for i=1: size(ygold,1)
 		#ypred 1X4 ygold 4X1
-		ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(ypred[i] .== maximum(ypred[i],2))), size(ygold[i],1),size(ygold[i],2)))
+		ncorrect += sum(ygold[i] .* reshape(convert(KnetArray{Float32},(AutoGrad.getval(ypred)[i] .== maximum(AutoGrad.getval(ypred)[i],2))), size(ygold[i],1),size(ygold[i],2)))
 		
 	end
 	#println("___________________________",size(ygold,1), "   ***    ", ncorrect);
@@ -265,30 +273,80 @@ w=4;
 m=24;
 kh=3;
 kw=3;
-gclip=0.01
+gclip=1
 trainInstances= 1000
-testInstances= 100
-println("#######  NEURAL_GPU coded by Pirah Noor Soomro   #######\n\n ___________________________________________________________________")
-println("------------------MULTIPLY-----------------------")
+testInstances= 1000
+lowerbound=0
+upperbound=1000000
+println("\n\n#######  NEURAL_GPU coded by Pirah Noor Soomro   #######\n\n ___________________________________________________________________")
 println("Training Instances: ", trainInstances)
 println("Testing Instances ", testInstances)
+#=println("------------------MULTIPLY-----------------------")
 x, ygold=generateData(trainInstances, "*");
 E, vocab=embeddedMatrix();
 n=length(x[1]);
 W=initWeight(kh,kw, w, n, vocab)
 prms = initparams(W)
-println(sum(W[1]))
 train(x, ygold, gclip, W, E, vocab, prms)
-println(sum(W[1]))
-x, ygold=generateData(trainInstances, "*");
-train(x, ygold, gclip, W, E, vocab, prms)
-println(sum(W[1]))
 println("Testing")
-xtst, ygoldtst=generateData(testInstances, "*");
-a=accuracy(x, ygold,W, E, vocab)
-println("Accuracy Binary MULTIPLY = ", a, "%.")
+xtst, ygoldtst=generateData(lowerbound, 1606938000000000000000000000000000000000000000000000000000000, testInstances, "*"); #1606938000000000000000000000000000000000000000000000000000000 upto 200 bits
 a=accuracy(xtst, ygoldtst,W, E, vocab)
-println("Accuracy Binary MULTIPLY = ", a, "%.")
+println("Accuracy Binary MULTIPLY = ", a, "%.")=#
+println("------------------ADD-----------------------")
+x, ygold=generateData(trainInstances, "+");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+prms = initparams(W)
+train(x, ygold, gclip, W, E, vocab, prms)
+println("Testing")
+xtst, ygoldtst=generateData(lowerbound, 1606938000000000000000000000000000000000000000000000000000000, testInstances, "+"); #1606938000000000000000000000000000000000000000000000000000000 upto 200 bits
+a=accuracy(xtst, ygoldtst,W, E, vocab)
+println("Accuracy Binary ADD = ", a, "%.")
+#=println("------------------COPY-----------------------")
+x, ygold=generateData(trainInstances, "copy");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+prms = initparams(W)
+train(x, ygold, gclip, W, E, vocab, prms)
+println("Testing")
+xtst, ygoldtst=generateData(lowerbound, 1606938000000000000000000000000000000000000000000000000000000, testInstances, "copy"); #1606938000000000000000000000000000000000000000000000000000000 upto 200 bits
+a=accuracy(xtst, ygoldtst,W, E, vocab)
+println("Accuracy Binary COPY = ", a, "%.")
+println("------------------REVERSE-----------------------")
+x, ygold=generateData(trainInstances, "reverse");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+prms = initparams(W)
+train(x, ygold, gclip, W, E, vocab, prms)
+println("Testing")
+xtst, ygoldtst=generateData(lowerbound, 1606938000000000000000000000000000000000000000000000000000000, testInstances, "reverse"); #1606938000000000000000000000000000000000000000000000000000000 upto 200 bits
+a=accuracy(xtst, ygoldtst,W, E, vocab)
+println("Accuracy Binary REVERSE = ", a, "%.")
+println("------------------DUPLICATE-----------------------")
+x, ygold=generateData(trainInstances, "duplicate");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+prms = initparams(W)
+train(x, ygold, gclip, W, E, vocab, prms)
+println("Testing")
+xtst, ygoldtst=generateData(lowerbound, 1606938000000000000000000000000000000000000000000000000000000, testInstances, "duplicate"); #1606938000000000000000000000000000000000000000000000000000000 upto 200 bits
+a=accuracy(xtst, ygoldtst,W, E, vocab)
+println("Accuracy Binary DUPLICATE = ", a, "%.")
+println("------------------Counting By Sorting-----------------------")
+x, ygold=generateData(trainInstances, "cbys");
+E, vocab=embeddedMatrix();
+n=length(x[1]);
+W=initWeight(kh,kw, w, n, vocab)
+prms = initparams(W)
+train(x, ygold, gclip, W, E, vocab, prms)
+println("Testing")
+xtst, ygoldtst=generateData(lowerbound, 1606938000000000000000000000000000000000000000000000000000000, testInstances, "cbys"); #1606938000000000000000000000000000000000000000000000000000000 upto 200 bits
+a=accuracy(xtst, ygoldtst,W, E, vocab)
+println("Accuracy Binary CByS = ", a, "%.") =#
 
 #end
 #main()
